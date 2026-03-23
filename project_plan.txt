@@ -1,0 +1,75 @@
+Project Proposal: Player Churn Prediction & Engagement Optimization for Zynga
+Introduction and Rationale
+
+Zynga’s data‑science group uses vast game telemetry and player‑behaviour data to personalize game play and improve engagement. Research in the gaming industry emphasises that predicting player churn is vital for retention and profitability. Recent reviews of player‑churn prediction literature highlight that machine‑learning methods such as random forests, decision trees and logistic regression perform well in processing player‑behaviour data. They also demonstrate that using long‑term data and incorporating behavioural and social‑interaction features significantly improves prediction accuracy. Churn prediction is commercially valuable because retaining existing players costs far less than acquiring new ones.
+
+The project proposed below addresses the role’s focus on using large‑scale data, modelling player behaviour and communicating actionable insights. It uses the tools and skills specified in the job description—SQL, Python, Hadoop/Spark, machine‑learning/deep‑learning techniques, experimental design and data‑visualization platforms (e.g., Tableau)—to deliver a tangible business impact.
+
+Project Overview
+
+Project title: Player Churn Prediction & Engagement Optimization Platform
+
+Goal: Develop an end‑to‑end analytics platform that predicts player churn across Zynga’s portfolio, identifies at‑risk segments and triggers targeted interventions (e.g., personalized offers or content) to improve retention and monetization. The project will serve as a proof‑of‑concept demonstrating the candidate’s ability to handle large‑scale data, build machine‑learning models, perform statistical testing and communicate results to game teams.
+
+Objectives
+Data ingestion & infrastructure: Extract and process billions of game‑event records using SQL and Spark.
+Exploratory data analysis: Understand player behaviour through metrics such as session length, frequency of play, in‑game purchases and social interactions.
+Feature engineering: Create meaningful features (e.g., recency–frequency–monetary (RFM) metrics, time‑based trends, social network attributes) for modelling.
+Churn‑prediction model: Train and evaluate machine‑learning and deep‑learning models (e.g., logistic regression, random forest, gradient boosting and LSTM networks).
+Dashboard & reporting: Build interactive dashboards in Tableau/QlikView to provide a source‑of‑truth for retention metrics and model performance.
+Experimental design: Design A/B tests and quasi‑experimental analyses to evaluate interventions aimed at reducing churn and improving player engagement.
+Deployment & collaboration: Integrate the predictive model into the game pipeline and collaborate with product managers, game designers and engineers to implement targeted interventions.
+Alignment with Job Description
+Job‑description requirements	How the project addresses them
+Work with large amounts of data to find opportunities to improve the experience Zynga provides to its players	The project processes and analyses massive game‑telemetry datasets using SQL and Spark to identify factors contributing to churn and engagement.
+Deliver analytics and data‑science projects aligned with product goals and improve core metrics	The churn‑prediction system directly targets retention metrics and enables evidence‑based decisions that increase player life‑time value (LTV).
+Maintain source‑of‑truth data sources and dashboards	An interactive Tableau dashboard provides real‑time insights into retention, churn, and the effect of interventions, serving as a definitive resource for stakeholders.
+Design, test, verify and implement machine‑learning models within Zynga’s games	Models are trained in Python and deployed via a REST API or real‑time streaming layer; A/B tests validate their impact and performance before production roll‑out.
+Fluent in SQL; solid experience with Python; adept in visualization tools	SQL is used for data extraction from Hive/BigQuery; PySpark and pandas handle data processing; Tableau or QlikView present findings.
+Experience with statistics, experimental design, machine learning, deep learning	Statistical tests determine feature significance; A/B testing and quasi‑experimental frameworks evaluate interventions; machine‑learning models (logistic regression, random forest) and deep‑learning architectures (LSTM) predict churn.
+Experience analyzing large datasets in a Hadoop or Spark environment and deploying production‑ready systems at scale	The pipeline leverages Hadoop/Spark for distributed processing and creates a scalable API or streaming service for real‑time scoring.
+Collaboration and communication with engineers, product managers, analysts and marketing	The project involves regular cross‑functional meetings to align modelling objectives with business goals and to ensure successful implementation and adoption.
+Strong passion for gaming	Focusing on player retention and engagement demonstrates an understanding of what motivates players and how to create more enjoyable experiences.
+Detailed Work Plan
+Phase 1 – Data Ingestion & Infrastructure (Weeks 1–3)
+Define data sources: Identify relevant tables in Zynga’s data warehouse (game events, transactions, social interactions, device info).
+Data extraction: Use SQL to write efficient queries that extract raw event data from Hive or BigQuery partitions.
+Distributed processing: Build a PySpark pipeline to process and aggregate billions of events. Partition data by game, user, and date to support parallelism.
+Data storage: Store intermediate features in a distributed file system (e.g., HDFS) or columnar tables optimized for analytics (Parquet).
+Quality checks: Implement validation scripts (using Python) to ensure data completeness and consistency (e.g., no null IDs, reasonable timestamps).
+Phase 2 – Exploratory Data Analysis & Feature Engineering (Weeks 3–5)
+EDA: Use Python (pandas, matplotlib, seaborn) to examine distributions of session length, purchases, level progression and social activity. Identify outliers and missing data patterns.
+Metric computation: Derive RFM metrics (Recency, Frequency, Monetary value) and cohort‑based retention curves.
+Time‑series features: Create rolling‑window aggregates (e.g., last 7‑day average spend, 30‑day session trend) to capture temporal behaviour.
+Social features: Quantify social engagement (e.g., number of friends, invitations sent, guild participation) to incorporate peer influences, as research suggests social factors may enhance prediction accuracy.
+Label definition: Define “churn” as players who do not log in for a defined period (e.g., 14 days). Prepare training and test datasets with balanced class weights.
+Visualizations: Build Tableau dashboards summarizing retention curves, top engagement features and distribution of churn across demographics.
+Phase 3 – Modelling & Evaluation (Weeks 6–8)
+Baseline models: Train interpretable models (logistic regression, decision tree) to establish a benchmark. Evaluate using AUC, precision–recall and calibration curves.
+Advanced machine‑learning models: Implement random forests, gradient boosting (XGBoost/LightGBM) and compare performance.
+Deep‑learning model: Build an LSTM‑based model to capture sequential patterns in game play. Research shows that integrating CNN and LSTM can improve churn prediction accuracy; a simplified LSTM variant will serve as proof‑of‑concept.
+Hyperparameter tuning: Use cross‑validation or Bayesian optimisation to find optimal parameters.
+Model interpretability: Apply SHAP values or permutation importance to identify key drivers of churn.
+Hold‑out testing: Evaluate models on a recent hold‑out cohort to ensure generalisation and stability over time.
+Phase 4 – Experimental Design & Intervention (Weeks 8–10)
+Segmentation: Use clustering (k‑means or hierarchical clustering) on model outputs and features to create player segments (e.g., high‑value whales, casual players, socially engaged players).
+Intervention design: For each segment, design targeted interventions—personalized offers, in‑game rewards, or tailored messages. Ensure interventions align with game design and do not disrupt user experience.
+A/B testing: Randomly assign at‑risk players to control and treatment groups. Use statistical tests (e.g., two‑sample t‑tests, chi‑square) to measure lift in retention, average revenue per user (ARPU) and player satisfaction.
+Quasi‑experimental analysis: When random assignment is not possible, use propensity‑score matching or difference‑in‑differences techniques to estimate the causal impact of interventions.
+Update dashboards: Integrate test results into Tableau to communicate performance to stakeholders.
+Phase 5 – Deployment & Collaboration (Weeks 10–12)
+Model deployment: Package the selected model into a microservice (e.g., using Flask/FastAPI) that exposes a prediction API. For real‑time scoring, consider streaming architectures (Kafka + Spark Streaming).
+Integration with game client: Collaborate with engineers to call the prediction API from the game server and deliver targeted content based on churn probability.
+Monitoring: Set up monitoring for latency, model drift and data quality. Define retraining schedules and metrics for ongoing evaluation.
+Knowledge transfer: Present findings to product managers, game designers and marketers; provide documentation and training sessions to ensure adoption.
+Future improvements: Outline next steps, such as multi‑game transfer learning, reinforcement learning for reward optimization and deeper integration with social networks.
+Expected Deliverables
+Data pipeline documentation: SQL scripts, PySpark notebooks and data schema definitions.
+Feature store: A well‑documented set of engineered features stored in a reproducible format.
+Model artefacts: Trained models, evaluation reports and interpretability analyses.
+Dashboard: A Tableau/QlikView workbook showing retention curves, churn probabilities and A/B test results.
+API service: Containerised microservice for real‑time scoring, accompanied by deployment instructions.
+Final report: Presentation summarizing insights, model performance, recommended interventions and business impact.
+Conclusion
+
+This project addresses Zynga’s need to harness large‑scale data and statistical modelling to improve player experiences. By building a player‑churn prediction and engagement optimization platform, the candidate demonstrates proficiency in SQL, Python, Spark, machine learning, deep learning, data visualisation and experimental design—exactly the skills sought in the job description. The project also embodies best practices from recent research, such as using long‑term player‑behaviour data and social‑interaction features to improve model accuracy and emphasising the importance of retention over acquisition. With proper execution and cross‑functional collaboration, the platform can deliver measurable improvements in retention and monetization while showcasing the candidate’s ability to translate data into actionable insights.
