@@ -1,11 +1,13 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Reshape
+from tensorflow.keras.layers import Dense
 import joblib
 import os
 from pathlib import Path
@@ -52,7 +54,10 @@ def load_and_split_data(filepath: str):
 def train_baseline_model(X_train, y_train):
     """Train interpretable baseline model (logistic regression)."""
     print("Training Baseline Logistic Regression...")
-    model = LogisticRegression(max_iter=1000)
+    model = Pipeline([
+        ('scaler', StandardScaler()),
+        ('lr', LogisticRegression(max_iter=1000))
+    ])
     model.fit(X_train, y_train)
     return model
 
@@ -68,14 +73,11 @@ def train_advanced_model(X_train, y_train):
     model.fit(X_train, y_train)
     return model
 
-def build_lstm_model(input_shape):
-    """Build an LSTM-based deep learning model for POC."""
-    print("Building LSTM Model...")
+def build_dense_model(input_shape):
+    """Build a simple Dense network for POC."""
+    print("Building Dense Model...")
     model = Sequential()
-    # Reshape input to (samples, time_steps, features). 
-    # For a cross-sectional dataset, we treat all features as 1 time step.
-    model.add(Reshape((1, input_shape), input_shape=(input_shape,)))
-    model.add(LSTM(32, activation='relu'))
+    model.add(Dense(32, activation='relu', input_shape=(input_shape,)))
     model.add(Dense(16, activation='relu'))
     model.add(Dense(1, activation='sigmoid'))
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
@@ -92,14 +94,32 @@ if __name__ == "__main__":
         advanced_xgb = train_advanced_model(X_train, y_train)
         
         print("\nTraining Deep Learning Architecture...")
-        lstm_model = build_lstm_model(X_train.shape[1])
-        lstm_model.fit(X_train, y_train, epochs=5, batch_size=32, validation_split=0.2, verbose=1)
+        dl_model = build_dense_model(X_train.shape[1])
+        dl_model.fit(X_train, y_train, epochs=5, batch_size=32, validation_split=0.2, verbose=1)
         
         # Save models for deployment
+        import shutil
+        from datetime import datetime
         os.makedirs("../../models", exist_ok=True)
         joblib.dump(baseline_lr, "../../models/baseline_lr.pkl")
-        joblib.dump(advanced_xgb, "../../models/advanced_xgb.pkl")
-        lstm_model.save("../../models/lstm_model.h5")
+        
+        # Timestamp based model versioning
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        xgb_filename = f"advanced_xgb_{timestamp}.pkl"
+        xgb_path = os.path.join("../../models", xgb_filename)
+        joblib.dump(advanced_xgb, xgb_path)
+        
+        # Create latest symlink or copy
+        latest_path = "../../models/advanced_xgb_latest.pkl"
+        try:
+            if os.path.exists(latest_path):
+                os.remove(latest_path)
+            os.symlink(xgb_filename, latest_path)
+        except OSError:
+            # Fallback for Windows if symlink privilege is missing
+            shutil.copy(xgb_path, latest_path)
+            
+        dl_model.save("../../models/dense_model.h5")
         
         print("Models successfully trained and saved!")
     except FileNotFoundError:

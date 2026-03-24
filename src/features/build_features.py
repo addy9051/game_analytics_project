@@ -46,7 +46,14 @@ def load_data(
 
 def create_derived_features(df: DataFrame) -> DataFrame:
     """Create churn label and engagement-derived features in Spark."""
-    if "EngagementLevel" in df.columns:
+    # Prioritize precise behavioral signal (recency of login) over snapshot engagement
+    if "DaysSinceLastLogin" in df.columns:
+        df = df.withColumn(
+            "Churn_Risk",
+            F.when(F.col("DaysSinceLastLogin") > F.lit(14), F.lit(1)).otherwise(F.lit(0)),
+        )
+    elif "EngagementLevel" in df.columns:
+        # Fallback if DaysSinceLastLogin is not yet in the upstream dataset
         df = df.withColumn(
             "Churn_Risk",
             F.when(F.col("EngagementLevel") == F.lit("Low"), F.lit(1)).otherwise(F.lit(0)),
@@ -69,7 +76,12 @@ def create_derived_features(df: DataFrame) -> DataFrame:
 
 def encode_categorical_features(df: DataFrame) -> DataFrame:
     """Encode categorical columns with Spark StringIndexer."""
+    import joblib
+    import os
+    os.makedirs("../../models", exist_ok=True)
+    
     categorical_cols = ["Gender", "Location", "GameGenre", "GameDifficulty"]
+    mappings = {}
     for col_name in categorical_cols:
         if col_name in df.columns:
             indexed_col = f"{col_name}_idx"
@@ -78,40 +90,15 @@ def encode_categorical_features(df: DataFrame) -> DataFrame:
                 outputCol=indexed_col,
                 handleInvalid="keep",
             )
-            df = indexer.fit(df).transform(df)
+            model = indexer.fit(df)
+            df = model.transform(df)
             df = df.drop(col_name).withColumnRenamed(indexed_col, col_name)
-    return df
-
-
-def scale_numerical_features(df: DataFrame) -> DataFrame:
-    """Scale numerical features using Spark column expressions."""
-    num_cols = [
-        "Age",
-        "PlayTimeHours",
-        "SessionsPerWeek",
-        "AvgSessionDurationMinutes",
-        "PlayerLevel",
-        "AchievementsUnlocked",
-        "TotalWeeklyMinutes",
-        "AchievementsPerLevel",
-    ]
-    cols_to_scale = [c for c in num_cols if c in df.columns]
-    if not cols_to_scale:
-        return df
-
-    stats_expr = []
-    for col_name in cols_to_scale:
-        stats_expr.append(F.mean(F.col(col_name)).alias(f"{col_name}_mean"))
-        stats_expr.append(F.stddev(F.col(col_name)).alias(f"{col_name}_std"))
-    stats_row = df.agg(*stats_expr).collect()[0]
-
-    for col_name in cols_to_scale:
-        mean_val = stats_row[f"{col_name}_mean"]
-        std_val = stats_row[f"{col_name}_std"]
-        if std_val and std_val != 0:
-            df = df.withColumn(col_name, (F.col(col_name) - F.lit(mean_val)) / F.lit(std_val))
-        else:
-            df = df.withColumn(col_name, F.lit(0.0))
+            
+            # Save mapping for API
+            labels = model.labels
+            mappings[col_name] = {label: idx for idx, label in enumerate(labels)}
+            
+    joblib.dump(mappings, "../../models/category_mappings.pkl")
     return df
 
 
@@ -156,9 +143,6 @@ def build_all_features(
 
     print("Encoding categoricals...")
     df = encode_categorical_features(df)
-
-    print("Scaling numericals...")
-    df = scale_numerical_features(df)
 
     print("Dropping redundant target columns for training dataset...")
     df = drop_redundant_columns(df)

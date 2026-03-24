@@ -53,8 +53,26 @@ def segment_players(df: pd.DataFrame, churn_probs: np.ndarray, n_clusters=3):
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         df['Segment'] = kmeans.fit_predict(df[available_features].fillna(0))
         
-        # Simplistic arbitrary mapping for the proof of concept
-        segment_map = {0: "Casual / Low-Risk", 1: "Highly Engaged / Whales", 2: "At-Risk / Churning"}
+        # Dynamically map segments based on cluster centroids
+        centroids = pd.DataFrame(kmeans.cluster_centers_, columns=available_features)
+        
+        # At-Risk / Churning: Highest Churn_Probability
+        at_risk_idx = centroids['Churn_Probability'].idxmax()
+        
+        # Highly Engaged / Whales: Highest TotalWeeklyMinutes (excluding At-Risk group)
+        remaining = centroids.drop(index=at_risk_idx)
+        if 'TotalWeeklyMinutes' in remaining.columns:
+            whales_idx = remaining['TotalWeeklyMinutes'].idxmax()
+        else:
+            whales_idx = remaining.index[0]
+            
+        casual_idx = [i for i in range(n_clusters) if i not in (at_risk_idx, whales_idx)][0]
+        
+        segment_map = {
+            casual_idx: "Casual / Low-Risk",
+            whales_idx: "Highly Engaged / Whales",
+            at_risk_idx: "At-Risk / Churning"
+        }
         df['Player_Persona'] = df['Segment'].map(segment_map)
     else:
         df['Player_Persona'] = "Unknown"
@@ -64,18 +82,44 @@ def segment_players(df: pd.DataFrame, churn_probs: np.ndarray, n_clusters=3):
 def map_interventions(df: pd.DataFrame):
     """
     Map player segments to specific tailored retention interventions.
+    Incorporates Expected Value ROI tracking: (Churn_Prob * CLV) - Cost > Threshold
     """
-    print("Mapping retention interventions to identified segments...")
-    def get_offer(persona):
-        if persona == "At-Risk / Churning":
-            return "Campaign A: 50% Off Next Purchase & Free Energy Refill"
-        elif persona == "Casual / Low-Risk":
-            return "Campaign B: Push Notification for Weekend Bonus XP Event"
-        elif persona == "Highly Engaged / Whales":
-            return "Campaign C: Exclusive VIP Cosmetic Item Unlock"
-        return "No Offer"
+    print("Mapping retention interventions using ROI Expected Value model...")
+    offers = []
+    
+    # Cost & revenue assumptions
+    cost_campaign_A = 5.0  # 50% off + Energy
+    cost_campaign_C = 15.0 # VIP Cosmetic
+    roi_threshold = 2.0
+    
+    for _, row in df.iterrows():
+        persona = row.get('Player_Persona', 'Unknown')
+        churn_prob = row.get('Churn_Probability', 0)
         
-    df['Recommended_Intervention'] = df['Player_Persona'].apply(get_offer)
+        # Estimate Lifetime Value (Proxy via InGamePurchases if available)
+        if 'InGamePurchases' in df.columns:
+            ltv = float(row['InGamePurchases']) * 10
+        else:
+            ltv = float(row.get('TotalWeeklyMinutes', 50)) * 0.1
+            
+        if persona == "At-Risk / Churning":
+            ev = (churn_prob * ltv) - cost_campaign_A
+            if ev > roi_threshold:
+                offers.append("Campaign A: 50% Off Next Purchase & Free Energy Refill")
+            else:
+                offers.append("Campaign B: Push Notification for Weekend Bonus XP Event")
+        elif persona == "Highly Engaged / Whales":
+            ev = (churn_prob * ltv) - cost_campaign_C
+            if ev > roi_threshold:
+                offers.append("Campaign C: Exclusive VIP Cosmetic Item Unlock")
+            else:
+                offers.append("No Offer")
+        elif persona == "Casual / Low-Risk":
+            offers.append("Campaign B: Push Notification for Weekend Bonus XP Event")
+        else:
+            offers.append("No Offer")
+            
+    df['Recommended_Intervention'] = offers
     return df
 
 def perform_ab_test_simulation(df: pd.DataFrame, target_metric='PlayTimeHours'):
@@ -114,15 +158,6 @@ def perform_ab_test_simulation(df: pd.DataFrame, target_metric='PlayTimeHours'):
         else:
             print("--> NOT SIGNIFICANT: The intervention did not have a reliable or distinguishable effect.")
 
-def perform_quasi_experiment(data):
-    """
-    Demonstrate Quasi-Experimental design layout.
-    """
-    print("\n--- Quasi-Experimental Framework ---")
-    print("Method: Propensity Score Matching (PSM)")
-    print("Application: When random A/B assignment isn't possible (e.g., game client updates uniformly applied).")
-    print("Logic: We use logistic regression on behavioral features to match organically 'treated' users with identical 'control' users to infer causal impact.")
-
 if __name__ == "__main__":
     try:
         # Load the features previously engineered by the pipeline
@@ -136,7 +171,6 @@ if __name__ == "__main__":
         
         # Test the hypothesis
         perform_ab_test_simulation(df_interventions, target_metric='PlayTimeHours')
-        perform_quasi_experiment(df)
         
         # Save experimental cohort tracking for Phase 5 / BI Tools
         df_interventions.to_csv("../../data/processed/experimental_design_cohorts.csv", index=False)

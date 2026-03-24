@@ -18,11 +18,26 @@ def evaluate_model(model, X_test, y_test, model_name="Model"):
     y_pred = (y_pred_proba >= 0.5).astype(int)
     
     print(classification_report(y_test, y_pred))
-    roc_auc = roc_auc_score(y_test, y_pred_proba)
-    acc = accuracy_score(y_test, y_pred)
     
-    print(f"Accuracy: {acc:.4f} | ROC AUC Score: {roc_auc:.4f}")
-    return roc_auc
+    # Standard AUC
+    roc_auc = roc_auc_score(y_test, y_pred_proba)
+    
+    # Revenue-Weighted AUC (Prioritizes False Negatives on Whales)
+    if 'InGamePurchases' in X_test.columns:
+        # Avoid zero weights for non-spenders so they aren't completely ignored
+        weights = X_test['InGamePurchases'].values + 0.1
+        weighted_roc_auc = roc_auc_score(y_test, y_pred_proba, sample_weight=weights)
+        print(f"Standard ROC AUC Score: {roc_auc:.4f}")
+        print(f"Revenue-Weighted ROC AUC Score: {weighted_roc_auc:.4f} (Optimized for LTV)")
+        roc_auc_to_return = weighted_roc_auc
+    else:
+        print(f"Standard ROC AUC Score: {roc_auc:.4f}")
+        roc_auc_to_return = roc_auc
+        
+    acc = accuracy_score(y_test, y_pred)
+    print(f"Accuracy: {acc:.4f}")
+    
+    return roc_auc_to_return
 
 def generate_shap_values(model, X_test, output_path="shap_summary.png"):
     """Apply SHAP values to identify key drivers of churn."""
