@@ -5,11 +5,10 @@ import shap
 import matplotlib.pyplot as plt
 import joblib
 
-def evaluate_model(model, X_test, y_test, model_name="Model"):
-    """Evaluate using AUC and classification reports."""
+def evaluate_model(model, X_test, y_test, model_name="Model", weights=None):
+    """Evaluate using revenue-weighted AUC and classification reports."""
     print(f"\n--- Evaluating {model_name} ---")
     
-    # Differentiate between Sklearn/XGBoost (predict_proba) and Keras (predict)
     if hasattr(model, 'predict_proba'):
         y_pred_proba = model.predict_proba(X_test)[:, 1]
     else:
@@ -22,10 +21,8 @@ def evaluate_model(model, X_test, y_test, model_name="Model"):
     # Standard AUC
     roc_auc = roc_auc_score(y_test, y_pred_proba)
     
-    # Revenue-Weighted AUC (Prioritizes False Negatives on Whales)
-    if 'InGamePurchases' in X_test.columns:
-        # Avoid zero weights for non-spenders so they aren't completely ignored
-        weights = X_test['InGamePurchases'].values + 0.1
+    # Revenue-Weighted AUC
+    if weights is not None:
         weighted_roc_auc = roc_auc_score(y_test, y_pred_proba, sample_weight=weights)
         print(f"Standard ROC AUC Score: {roc_auc:.4f}")
         print(f"Revenue-Weighted ROC AUC Score: {weighted_roc_auc:.4f} (Optimized for LTV)")
@@ -67,10 +64,18 @@ if __name__ == "__main__":
         filepath = "../../data/processed/features_ready_for_modeling.csv"
         X_train, X_test, y_train, y_test = load_and_split_data(filepath)
         
-        print("Loading trained XGBoost model for evaluation...")
-        xgb_model = joblib.load("../../models/advanced_xgb.pkl")
+        # Extract evaluation weight directly
+        if 'InGamePurchases' in X_test.columns:
+            weights = X_test['InGamePurchases'].values + 0.1
+            X_test_features = X_test.drop(columns=['InGamePurchases'])
+        else:
+            weights = None
+            X_test_features = X_test
         
-        evaluate_model(xgb_model, X_test, y_test, "XGBoost Classifier")
-        generate_shap_values(xgb_model, X_test, output_path="../../models/shap_summary.png")
+        print("Loading trained XGBoost model for evaluation...")
+        xgb_model = joblib.load("../../models/advanced_xgb_latest.pkl")
+        
+        evaluate_model(xgb_model, X_test_features, y_test, model_name="XGBoost Classifier", weights=weights)
+        generate_shap_values(xgb_model, X_test_features, output_path="../../models/shap_summary.png")
     except Exception as e:
         print(f"Check if models have been trained and data is processed. Error: {e}")

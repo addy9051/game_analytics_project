@@ -5,7 +5,7 @@ scikit-learn
 xgboost
 lightgbm
 tensorflow
-Flask
+
 FastAPI
 uvicorn
 jupyter

@@ -12,35 +12,9 @@ import joblib
 import os
 from pathlib import Path
 
-def resolve_processed_data_path(filepath: str) -> Path:
-    """
-    Resolve processed feature path for either:
-    - legacy single CSV file
-    - Spark CSV output directory (part-*.csv), with optional .csv suffix in input
-    """
-    requested = Path(filepath)
-    if requested.exists():
-        return requested
-
-    if requested.suffix.lower() == ".csv":
-        spark_dir_candidate = requested.with_suffix("")
-        if spark_dir_candidate.exists():
-            return spark_dir_candidate
-
-    raise FileNotFoundError(f"Processed dataset not found at {filepath}")
-
-
-def read_processed_dataset(filepath: str) -> pd.DataFrame:
-    """Read processed data from CSV file or Spark CSV output directory."""
-    resolved_path = resolve_processed_data_path(filepath)
-
-    if resolved_path.is_dir():
-        part_files = sorted(resolved_path.glob("part-*.csv"))
-        if not part_files:
-            raise FileNotFoundError(f"No Spark part files found in directory: {resolved_path}")
-        return pd.concat((pd.read_csv(part_file) for part_file in part_files), ignore_index=True)
-
-    return pd.read_csv(resolved_path)
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.utils.data_io import read_processed_dataset
 
 
 def load_and_split_data(filepath: str):
@@ -89,13 +63,19 @@ if __name__ == "__main__":
         print("Loading processed data...")
         X_train, X_test, y_train, y_test = load_and_split_data(filepath)
         
+        # Hold back LTV target so it is strictly used as an evaluation weight
+        if 'InGamePurchases' in X_train.columns:
+            X_train_features = X_train.drop(columns=['InGamePurchases'])
+        else:
+            X_train_features = X_train
+            
         # Train Models
-        baseline_lr = train_baseline_model(X_train, y_train)
-        advanced_xgb = train_advanced_model(X_train, y_train)
+        baseline_lr = train_baseline_model(X_train_features, y_train)
+        advanced_xgb = train_advanced_model(X_train_features, y_train)
         
         print("\nTraining Deep Learning Architecture...")
-        dl_model = build_dense_model(X_train.shape[1])
-        dl_model.fit(X_train, y_train, epochs=5, batch_size=32, validation_split=0.2, verbose=1)
+        dl_model = build_dense_model(X_train_features.shape[1])
+        dl_model.fit(X_train_features, y_train, epochs=5, batch_size=32, validation_split=0.2, verbose=1)
         
         # Save models for deployment
         import shutil

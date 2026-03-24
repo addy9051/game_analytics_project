@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi import FastAPI, HTTPException, Security, Depends, BackgroundTasks
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 import joblib
@@ -31,25 +31,28 @@ API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
 
 def get_api_key(api_key: str = Security(api_key_header)):
-    valid_key = os.getenv("API_KEY", "super-secret-key-12345")
+    valid_key = os.environ["API_KEY"]  # Raises KeyError at startup if unset — intentional
     if api_key != valid_key:
         raise HTTPException(status_code=403, detail="Could not validate API key")
     return api_key
 
 # Initialize prediction telemetry log
 PREDICTION_LOG_FILE = os.getenv("PREDICTION_LOG_FILE", os.path.join(os.path.dirname(__file__), "..", "data", "processed", "prediction_logs.csv"))
+from threading import Lock
+log_lock = Lock()
 
 def log_prediction(player_id, churn_prob, risk_level, recommended_action):
     """Log prediction telemetry for feedback loop and drift detection."""
     try:
         os.makedirs(os.path.dirname(PREDICTION_LOG_FILE), exist_ok=True)
-        file_exists = os.path.isfile(PREDICTION_LOG_FILE)
         
-        with open(PREDICTION_LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["timestamp", "player_id", "churn_probability", "risk_tier", "recommended_action"])
-            writer.writerow([datetime.utcnow().isoformat(), player_id, churn_prob, risk_level, recommended_action])
+        with log_lock:
+            file_exists = os.path.isfile(PREDICTION_LOG_FILE)
+            with open(PREDICTION_LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["timestamp", "player_id", "churn_probability", "risk_tier", "recommended_action"])
+                writer.writerow([datetime.utcnow().isoformat(), player_id, churn_prob, risk_level, recommended_action])
     except Exception as e:
         print(f"Failed to write prediction log: {e}")
 
@@ -70,7 +73,7 @@ except Exception as e:
     print(f"Warning: Mappings could not be loaded from {mapping_path}. Error: {e}")
 
 @app.post("/predict")
-def predict_churn(features: PlayerFeatures, api_key: str = Depends(get_api_key)):
+def predict_churn(features: PlayerFeatures, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):
     """
     Predict churn probability for a given player based on behavioral telemetry.
     """
@@ -99,7 +102,7 @@ def predict_churn(features: PlayerFeatures, api_key: str = Depends(get_api_key))
         recommended_action = "Trigger Retention Campaign" if risk_level == "High" else "Monitor"
         
         # Log payload asynchronously for feedback loop matching
-        log_prediction(player_id, round(churn_prob, 4), risk_level, recommended_action)
+        background_tasks.add_task(log_prediction, player_id, round(churn_prob, 4), risk_level, recommended_action)
         
         return {
             "player_id": player_id, 

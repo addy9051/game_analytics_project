@@ -1,0 +1,13 @@
+----------------------------------------------------------------
+Tue Mar 24 13:38:29 IST 2026:
+Booting Derby version The Apache Software Foundation - Apache Derby - 10.16.1.1 - (1901046): instance a816c00e-019d-1ee3-59ff-000007391000 
+on database directory D:\Downloads\game_analytics_project\src\features\metastore_db with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@3cd1a2f1 
+Loaded from file:/C:/Users/ankit/AppData/Roaming/Python/Python311/site-packages/pyspark/jars/derby-10.16.1.1.jar
+java.vendor=Oracle Corporation
+java.runtime.version=19.0.2+7-44
+user.dir=D:\Downloads\game_analytics_project\src\features
+os.name=Windows 11
+os.arch=amd64
+os.version=10.0
+derby.system.home=null
+Database Class Loader started - derby.database.classpath=''
