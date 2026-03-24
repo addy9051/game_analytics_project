@@ -1,90 +1,204 @@
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+import argparse
+import os
+import sys
+from typing import Optional
 
-def load_data(filepath: str) -> pd.DataFrame:
-    """Load the raw game behavior dataset."""
-    return pd.read_csv(filepath)
+try:
+    from src.data.ingestion import (
+        create_spark_session,
+        extract_data_from_emr_hive,
+        extract_data_from_s3,
+    )
+except ModuleNotFoundError:
+    # Allow running this file directly without installing as a package.
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+    from src.data.ingestion import (  # type: ignore
+        create_spark_session,
+        extract_data_from_emr_hive,
+        extract_data_from_s3,
+    )
 
-def create_derived_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create new features based on existing ones.
-    Since we don't have explicit time-series logs, we use the aggregates provided.
-    """
-    df = df.copy()
-    
-    # Target definition: Convert EngagementLevel 'Low' to churn prediction target (1=Churn/Low, 0=Retain/High-Med)
-    if 'EngagementLevel' in df.columns:
-        df['Churn_Risk'] = df['EngagementLevel'].apply(lambda x: 1 if x == 'Low' else 0)
-    
-    # Feature Engineering: Weekly engagement intensity
-    df['TotalWeeklyMinutes'] = df['SessionsPerWeek'] * df['AvgSessionDurationMinutes']
-    
-    # Feature Engineering: Achievement efficiency
-    # Avoid division by zero
-    df['AchievementsPerLevel'] = df['AchievementsUnlocked'] / (df['PlayerLevel'] + 1)
-    
+from pyspark.ml.feature import StringIndexer
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+
+
+def load_data(
+    source: str,
+    input_filepath: Optional[str],
+    hive_table: str,
+    s3_path: Optional[str],
+):
+    """Load raw dataset from local CSV, Hive table, or S3 path as Spark DataFrame."""
+    spark = create_spark_session()
+    if source == "local":
+        if not input_filepath:
+            raise ValueError("input_filepath is required when source='local'.")
+        return spark.read.csv(input_filepath, header=True, inferSchema=True)
+    if source == "hive":
+        return extract_data_from_emr_hive(spark, table_name=hive_table)
+    if source == "s3":
+        if not s3_path:
+            raise ValueError("s3_path is required when source='s3'.")
+        return extract_data_from_s3(spark, s3_path=s3_path)
+    raise ValueError("source must be one of: local, hive, s3")
+
+
+def create_derived_features(df: DataFrame) -> DataFrame:
+    """Create churn label and engagement-derived features in Spark."""
+    if "EngagementLevel" in df.columns:
+        df = df.withColumn(
+            "Churn_Risk",
+            F.when(F.col("EngagementLevel") == F.lit("Low"), F.lit(1)).otherwise(F.lit(0)),
+        )
+
+    if {"SessionsPerWeek", "AvgSessionDurationMinutes"}.issubset(set(df.columns)):
+        df = df.withColumn(
+            "TotalWeeklyMinutes",
+            F.col("SessionsPerWeek") * F.col("AvgSessionDurationMinutes"),
+        )
+
+    if {"AchievementsUnlocked", "PlayerLevel"}.issubset(set(df.columns)):
+        df = df.withColumn(
+            "AchievementsPerLevel",
+            F.col("AchievementsUnlocked") / (F.col("PlayerLevel") + F.lit(1)),
+        )
+
     return df
 
-def encode_categorical_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Label encode categorical columns for modeling."""
-    df = df.copy()
-    categorical_cols = ['Gender', 'Location', 'GameGenre', 'GameDifficulty']
-    
-    le = LabelEncoder()
-    for col in categorical_cols:
-        if col in df.columns:
-            df[col] = le.fit_transform(df[col].astype(str))
-            
+
+def encode_categorical_features(df: DataFrame) -> DataFrame:
+    """Encode categorical columns with Spark StringIndexer."""
+    categorical_cols = ["Gender", "Location", "GameGenre", "GameDifficulty"]
+    for col_name in categorical_cols:
+        if col_name in df.columns:
+            indexed_col = f"{col_name}_idx"
+            indexer = StringIndexer(
+                inputCol=col_name,
+                outputCol=indexed_col,
+                handleInvalid="keep",
+            )
+            df = indexer.fit(df).transform(df)
+            df = df.drop(col_name).withColumnRenamed(indexed_col, col_name)
     return df
 
-def scale_numerical_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Scale numerical features using StandardScaler."""
-    df = df.copy()
-    num_cols = ['Age', 'PlayTimeHours', 'SessionsPerWeek', 'AvgSessionDurationMinutes', 
-                'PlayerLevel', 'AchievementsUnlocked', 'TotalWeeklyMinutes', 'AchievementsPerLevel']
-    
-    scaler = StandardScaler()
-    # Only scale columns that exist
+
+def scale_numerical_features(df: DataFrame) -> DataFrame:
+    """Scale numerical features using Spark column expressions."""
+    num_cols = [
+        "Age",
+        "PlayTimeHours",
+        "SessionsPerWeek",
+        "AvgSessionDurationMinutes",
+        "PlayerLevel",
+        "AchievementsUnlocked",
+        "TotalWeeklyMinutes",
+        "AchievementsPerLevel",
+    ]
     cols_to_scale = [c for c in num_cols if c in df.columns]
-    
-    if cols_to_scale:
-        df[cols_to_scale] = scaler.fit_transform(df[cols_to_scale])
-        
+    if not cols_to_scale:
+        return df
+
+    stats_expr = []
+    for col_name in cols_to_scale:
+        stats_expr.append(F.mean(F.col(col_name)).alias(f"{col_name}_mean"))
+        stats_expr.append(F.stddev(F.col(col_name)).alias(f"{col_name}_std"))
+    stats_row = df.agg(*stats_expr).collect()[0]
+
+    for col_name in cols_to_scale:
+        mean_val = stats_row[f"{col_name}_mean"]
+        std_val = stats_row[f"{col_name}_std"]
+        if std_val and std_val != 0:
+            df = df.withColumn(col_name, (F.col(col_name) - F.lit(mean_val)) / F.lit(std_val))
+        else:
+            df = df.withColumn(col_name, F.lit(0.0))
     return df
 
-def build_all_features(input_filepath: str, output_filepath: str):
-    """Run the entire feature engineering pipeline and save the result."""
+
+def drop_redundant_columns(df: DataFrame) -> DataFrame:
+    """Drop non-model columns."""
+    cols_to_drop = [c for c in ["PlayerID", "EngagementLevel"] if c in df.columns]
+    if cols_to_drop:
+        df = df.drop(*cols_to_drop)
+    return df
+
+
+def save_features(df: DataFrame, output_filepath: str):
+    """
+    Save processed features.
+    Spark writes CSV outputs as a directory of part files.
+    """
+    output_dir = output_filepath
+    if output_filepath.lower().endswith(".csv"):
+        output_dir = output_filepath.rsplit(".", 1)[0]
+    df.write.mode("overwrite").option("header", True).csv(output_dir)
+    print(f"Saved Spark CSV output to directory: {output_dir}")
+
+
+def build_all_features(
+    output_filepath: str,
+    input_filepath: Optional[str] = None,
+    source: str = "hive",
+    hive_table: str = "game_analytics.player_churn_raw",
+    s3_path: Optional[str] = None,
+) -> DataFrame:
+    """Run the feature pipeline with Spark-native transformations."""
     print("Loading raw data...")
-    df = load_data(input_filepath)
-    
+    df = load_data(
+        source=source,
+        input_filepath=input_filepath,
+        hive_table=hive_table,
+        s3_path=s3_path,
+    )
+
     print("Creating derived features...")
     df = create_derived_features(df)
-    
+
     print("Encoding categoricals...")
     df = encode_categorical_features(df)
-    
+
     print("Scaling numericals...")
     df = scale_numerical_features(df)
-    
+
     print("Dropping redundant target columns for training dataset...")
-    # Drop original ID and EngagementLevel to avoid target leakage since Churn_Risk is derived from it
-    if 'PlayerID' in df.columns:
-        df = df.drop(columns=['PlayerID'])
-    if 'EngagementLevel' in df.columns:
-        df = df.drop(columns=['EngagementLevel'])
-        
+    df = drop_redundant_columns(df)
+
     print(f"Saving processed features to {output_filepath}...")
-    df.to_csv(output_filepath, index=False)
+    save_features(df, output_filepath)
     print("Feature engineering complete!")
     return df
 
+
 if __name__ == "__main__":
-    # Example local usage
-    input_path = "../../data/raw/online_gaming_behavior_dataset.csv"
-    output_path = "../../data/processed/features_ready_for_modeling.csv"
-    
-    # Run locally
-    import os
-    os.makedirs("../../data/processed", exist_ok=True)
-    build_all_features(input_path, output_path)
+    parser = argparse.ArgumentParser(description="Build model-ready features from local CSV or EMR/S3 sources.")
+    parser.add_argument("--source", choices=["local", "hive", "s3"], default="hive")
+    parser.add_argument(
+        "--input-path",
+        default="../../data/raw/online_gaming_behavior_dataset.csv",
+        help="Local CSV input path (required if source=local).",
+    )
+    parser.add_argument(
+        "--hive-table",
+        default="game_analytics.player_churn_raw",
+        help="Hive table name used when source=hive.",
+    )
+    parser.add_argument(
+        "--s3-path",
+        default=None,
+        help="S3 CSV path used when source=s3 (e.g. s3://bucket/raw/file.csv).",
+    )
+    parser.add_argument(
+        "--output-path",
+        default="../../data/processed/features_ready_for_modeling.csv",
+        help="Processed features output path (.csv writes to directory without extension).",
+    )
+    args = parser.parse_args()
+
+    os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
+    build_all_features(
+        output_filepath=args.output_path,
+        input_filepath=args.input_path,
+        source=args.source,
+        hive_table=args.hive_table,
+        s3_path=args.s3_path,
+    )

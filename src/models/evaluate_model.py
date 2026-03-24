@@ -44,7 +44,11 @@ def generate_shap_values(model, X_test, output_path="shap_summary.png"):
 if __name__ == "__main__":
     # Local execution for evaluation
     try:
-        from train_model import load_and_split_data
+        try:
+            from train_model import load_and_split_data
+        except ModuleNotFoundError:
+            from src.models.train_model import load_and_split_data
+
         filepath = "../../data/processed/features_ready_for_modeling.csv"
         X_train, X_test, y_train, y_test = load_and_split_data(filepath)
         
