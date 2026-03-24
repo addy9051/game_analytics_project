@@ -6,6 +6,7 @@ import pandas as pd
 import os
 import csv
 from datetime import datetime
+from typing import Any, Dict
 
 app = FastAPI(title="Game Player Churn Prediction API")
 
@@ -64,6 +65,24 @@ except Exception as e:
     xgb_model = None
     print(f"Warning: Model could not be loaded from {model_path}. Error: {e}")
 
+if xgb_model is not None and hasattr(xgb_model, "feature_names_in_"):
+    MODEL_FEATURES = list(xgb_model.feature_names_in_)
+else:
+    MODEL_FEATURES = [
+        "Age",
+        "Gender",
+        "Location",
+        "GameGenre",
+        "PlayTimeHours",
+        "GameDifficulty",
+        "SessionsPerWeek",
+        "AvgSessionDurationMinutes",
+        "PlayerLevel",
+        "AchievementsUnlocked",
+        "TotalWeeklyMinutes",
+        "AchievementsPerLevel",
+    ]
+
 # Load category mappings
 mapping_path = os.getenv("MAPPINGS_PATH", os.path.join(os.path.dirname(__file__), "..", "models", "category_mappings.pkl"))
 try:
@@ -82,7 +101,7 @@ def predict_churn(features: PlayerFeatures, background_tasks: BackgroundTasks, a
         
     try:
         # Convert the Pydantic basemodel directly into a pandas DataFrame mapped to the 13 training features
-        data_dict = features.dict()
+        data_dict: Dict[str, Any] = features.dict()
         player_id = data_dict.pop('player_id')
         
         # Apply categorical mappings
@@ -91,8 +110,15 @@ def predict_churn(features: PlayerFeatures, background_tasks: BackgroundTasks, a
                 val = data_dict[col]
                 data_dict[col] = category_mappings[col].get(val, len(category_mappings[col]))
                 
-        # Order must match training exactly (the Dataframe ensures column names map properly in xgboost)
-        df_features = pd.DataFrame([data_dict])
+        # Build model-aligned payload so extra request fields do not break inference.
+        missing_cols = [col for col in MODEL_FEATURES if col not in data_dict]
+        if missing_cols:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing required model features: {missing_cols}",
+            )
+        aligned_payload = {col: data_dict[col] for col in MODEL_FEATURES}
+        df_features = pd.DataFrame([aligned_payload], columns=MODEL_FEATURES)
         
         # Predict probability of Churn (class 1)
         churn_prob = float(xgb_model.predict_proba(df_features)[0][1])
