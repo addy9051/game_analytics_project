@@ -35,7 +35,7 @@ def train_baseline_model(X_train, y_train):
     model.fit(X_train, y_train)
     return model
 
-def train_advanced_model(X_train, y_train):
+def train_advanced_model(X_train, y_train, sample_weight=None):
     """Implement advanced gradient boosting model (XGBoost)."""
     print("Training Advanced XGBoost Classifier...")
     model = XGBClassifier(
@@ -44,7 +44,7 @@ def train_advanced_model(X_train, y_train):
         random_state=42, 
         eval_metric='logloss'
     )
-    model.fit(X_train, y_train)
+    model.fit(X_train, y_train, sample_weight=sample_weight)
     return model
 
 def build_dense_model(input_shape):
@@ -63,7 +63,12 @@ if __name__ == "__main__":
         print("Loading processed data...")
         X_train, X_test, y_train, y_test = load_and_split_data(filepath)
         
-        # Hold back LTV target so it is strictly used as an evaluation weight
+        # Use revenue as a training-time weight for the advanced model,
+        # while still excluding it as a predictive feature.
+        revenue_weights_train = None
+        if 'InGamePurchases' in X_train.columns:
+            revenue_weights_train = X_train['InGamePurchases']
+
         if 'InGamePurchases' in X_train.columns:
             X_train_features = X_train.drop(columns=['InGamePurchases'])
         else:
@@ -71,7 +76,11 @@ if __name__ == "__main__":
             
         # Train Models
         baseline_lr = train_baseline_model(X_train_features, y_train)
-        advanced_xgb = train_advanced_model(X_train_features, y_train)
+        advanced_xgb = train_advanced_model(
+            X_train_features,
+            y_train,
+            sample_weight=revenue_weights_train,
+        )
         
         print("\nTraining Deep Learning Architecture...")
         dl_model = build_dense_model(X_train_features.shape[1])
