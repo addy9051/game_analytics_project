@@ -18,7 +18,6 @@ class PlayerFeatures(BaseModel):
     Location: str
     GameGenre: str
     PlayTimeHours: float
-    InGamePurchases: int
     GameDifficulty: str
     SessionsPerWeek: float
     AvgSessionDurationMinutes: float
@@ -30,10 +29,10 @@ class PlayerFeatures(BaseModel):
 # API Key Setup
 API_KEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
+VALID_API_KEY = os.environ["API_KEY"]  # Fail fast at startup if unset.
 
 def get_api_key(api_key: str = Security(api_key_header)):
-    valid_key = os.environ["API_KEY"]  # Raises KeyError at startup if unset — intentional
-    if api_key != valid_key:
+    if api_key != VALID_API_KEY:
         raise HTTPException(status_code=403, detail="Could not validate API key")
     return api_key
 
@@ -88,8 +87,15 @@ mapping_path = os.getenv("MAPPINGS_PATH", os.path.join(os.path.dirname(__file__)
 try:
     category_mappings = joblib.load(mapping_path)
 except Exception as e:
-    category_mappings = {}
-    print(f"Warning: Mappings could not be loaded from {mapping_path}. Error: {e}")
+    raise RuntimeError(
+        f"category_mappings.pkl failed to load from {mapping_path} — cannot serve predictions safely. "
+        f"Root cause: {e}"
+    ) from e
+
+if not category_mappings:
+    raise RuntimeError(
+        f"category_mappings.pkl failed to load from {mapping_path} — cannot serve predictions safely."
+    )
 
 @app.post("/predict")
 def predict_churn(features: PlayerFeatures, background_tasks: BackgroundTasks, api_key: str = Depends(get_api_key)):

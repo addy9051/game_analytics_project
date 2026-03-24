@@ -94,7 +94,7 @@ if __name__ == "__main__":
         try:
             if os.path.exists(latest_path):
                 os.remove(latest_path)
-            os.symlink(xgb_filename, latest_path)
+            os.symlink(xgb_path, latest_path)
         except OSError:
             # Fallback for Windows if symlink privilege is missing
             shutil.copy(xgb_path, latest_path)

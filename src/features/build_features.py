@@ -2,6 +2,8 @@ import argparse
 import os
 import sys
 from typing import Optional
+from pathlib import Path
+import joblib
 
 try:
     from src.data.ingestion import (
@@ -76,9 +78,8 @@ def create_derived_features(df: DataFrame) -> DataFrame:
 
 def encode_categorical_features(df: DataFrame) -> DataFrame:
     """Encode categorical columns with Spark StringIndexer."""
-    import joblib
-    import os
-    os.makedirs("../../models", exist_ok=True)
+    mappings_output_path = Path(__file__).resolve().parents[2] / "models" / "category_mappings.pkl"
+    mappings_output_path.parent.mkdir(parents=True, exist_ok=True)
     
     categorical_cols = ["Gender", "Location", "GameGenre", "GameDifficulty"]
     mappings = {}
@@ -98,7 +99,8 @@ def encode_categorical_features(df: DataFrame) -> DataFrame:
             labels = model.labels
             mappings[col_name] = {label: idx for idx, label in enumerate(labels)}
             
-    joblib.dump(mappings, "../../models/category_mappings.pkl")
+    joblib.dump(mappings, mappings_output_path)
+    print(f"Saved category mappings to {mappings_output_path}")
     return df
 
 
